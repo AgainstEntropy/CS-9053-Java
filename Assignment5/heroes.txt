@@ -1,0 +1,10 @@
+Valeria Emberheart,Warrior,1,0
+Gideon Emberfury,Priest,2,3
+Frostfire Caverns,Paladin,5,20
+Thaldrak the Cursed,Thief,4,99
+Grimgor Doomhammer,Warrior,10,5
+Thundralis the Berserker,Warrior,12,136
+Xyloreth the Forgotten,Wizard,6,30
+Astrid Wraithborne,Priest,7,40
+Zephyr Ironheart,Wizard,9,66
+Grimjaw the Scourge,Illusionist,5,20
