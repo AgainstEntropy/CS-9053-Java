@@ -4,7 +4,7 @@ import java.util.Comparator;
 
 import pair.Pair;
 
-public class BinarySearchTree<T extends Comparable<T>> {
+public class BinarySearchTree<T> {
 	private TreeNode<T> root;
 	private Comparator<T> comparator;
 
@@ -24,8 +24,10 @@ public class BinarySearchTree<T extends Comparable<T>> {
 	}
 
 	private TreeNode<T> insertRec(TreeNode<T> root, T value) {
+		TreeNode<T> newNode = new TreeNode<T>(value);
+
 		if (root == null) {
-			root = new TreeNode<T>(value);
+			root = newNode;
 			return root;
 		}
 
@@ -36,9 +38,9 @@ public class BinarySearchTree<T extends Comparable<T>> {
 				root.right = insertRec(root.right, value);
 			}
 		} else {
-			if (value.compareTo(root.value) < 0) {
+			if (newNode.compareTo(root) < 0) {
 				root.left = insertRec(root.left, value);
-			} else if (value.compareTo(root.value) > 0) {
+			} else if (newNode.compareTo(root) > 0) {
 				root.right = insertRec(root.right, value);
 			}
 		}
@@ -52,15 +54,16 @@ public class BinarySearchTree<T extends Comparable<T>> {
 	}
 
 	private boolean searchRec(TreeNode<T> root, T value) {
+		TreeNode<T> searchNode = new TreeNode<T>(value);
 		if (root == null) {
 			return false;
 		}
 
-		if (value.compareTo(root.value) == 0) {
+		if (searchNode.compareTo(root) == 0) {
 			return true;
 		}
 
-		if (value.compareTo(root.value) < 0) {
+		if (searchNode.compareTo(root) < 0) {
 			return searchRec(root.left, value);
 		} else {
 			return searchRec(root.right, value);
@@ -110,13 +113,13 @@ public class BinarySearchTree<T extends Comparable<T>> {
 		 * because Objects are not Comparable,
 		 * unless I pass in a Comparator into the constructor
 		 */
-		BinarySearchTree<MyObject> bst2 = new BinarySearchTree<>(
+		BinarySearchTree<Object> bst2 = new BinarySearchTree<>(
 			(o1, o2) -> {
 				return o1.hashCode() - o2.hashCode();
 			}
 		);
 		for (int i = 0; i < 10; i++) {
-			MyObject val = new MyObject();
+			Object val = new Object();
 			bst2.insert(val);
 		}
 		bst2.inorder();
@@ -153,9 +156,10 @@ public class BinarySearchTree<T extends Comparable<T>> {
 		 */
 
 		BinarySearchTree<Pair<Integer, String>> bst3 = new BinarySearchTree<>(
-				(p1, p2) -> {
-					return -p1.getKey() + p2.getKey();
-				});
+			(p1, p2) -> {
+				return -p1.getKey() + p2.getKey();
+			}
+		);
 
 		Pair<Integer, String> p1 = new Pair<>(5, "John");
 		bst3.insert(p1);
