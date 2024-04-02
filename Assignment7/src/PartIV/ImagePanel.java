@@ -7,7 +7,7 @@ import javax.swing.JPanel;
 
 public class ImagePanel extends JPanel {
 	private Image img;
-    private final String imgTemplate = "Assignment7/die%d.png";
+    private final String imgTemplate = "die%d.png";
     private int num = 1;
 	
 	public ImagePanel(String img) {

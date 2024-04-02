@@ -25,8 +25,8 @@ public class RollDice extends JFrame {
 		Box b1 = Box.createHorizontalBox();
 		Box b2 = Box.createVerticalBox();
 
-		dice1 = new ImagePanel("Assignment7/die1.png");
-		dice2 = new ImagePanel("Assignment7/die1.png");
+		dice1 = new ImagePanel("die1.png");
+		dice2 = new ImagePanel("die1.png");
 
 		dice1.addMouseListener(new MouseAdapter() {
 			@Override
