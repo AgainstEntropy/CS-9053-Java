@@ -1,13 +1,11 @@
 package chat;
 
-import java.awt.BorderLayout;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
@@ -39,7 +37,7 @@ public class ChatServer extends JFrame {
 		createUI();
 
 		try {
-			privateKey = Encryption.readPrivateKey("Assignment9/keypairs/pkcs8_key");
+			privateKey = Encryption.readPrivateKey("keypairs/pkcs8_key");
 		} catch (Exception e) {
 			e.printStackTrace();
 			System.err.println("problem loading private key: " + e.getMessage());
@@ -86,11 +84,11 @@ public class ChatServer extends JFrame {
 
 				InetAddress inetAddress = socket.getInetAddress();
 				ta.append("Got connection from client at " + inetAddress.getHostName() + " (" +
-						inetAddress.getHostAddress() + ")\n");
+				inetAddress.getHostAddress() + ")\n");
 				ta.append("Client " + clientId + "'s host name is " +
-						inetAddress.getHostName() + '\n');
+				inetAddress.getHostName() + '\n');
 				ta.append("Client " + clientId + "'s IP Address is " +
-						inetAddress.getHostAddress() + '\n');
+				inetAddress.getHostAddress() + '\n');
 
 				// Create and start a new thread for the connection
 				new Thread(new ClientHandler(socket, clientId)).start();
@@ -135,26 +133,27 @@ public class ChatServer extends JFrame {
 		}
 
 		private void sendEncryptedMessage(DataOutputStream client, String message) {
+			Key aesKey = clientKeys.get(client);
+			String encryptedMessage;
 			try {
-				Key aesKey = clientKeys.get(client);
-				String encryptedMessage = Encryption.encrypt(aesKey, message);
-				sendMessage(client, encryptedMessage);
+				encryptedMessage = Encryption.encrypt(aesKey, message);
 			} catch (InvalidKeyException | NoSuchPaddingException | NoSuchAlgorithmException
-					| InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
+			| InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
 				System.err.println("error sending message: " + e.getMessage());
+				return;
 			}
+			sendMessage(client, encryptedMessage);
 		}
 
 		private String receiveEncryptedMessage() {
+			String encryptedMessage = receiveMessage();
+			System.out.println("Received encrypted message: " + encryptedMessage);
 			try {
-				String encryptedMessage = receiveMessage();
-				System.out.println("Received encrypted message: " + encryptedMessage);
 				String decryptedMessage = Encryption.decrypt(AESKey, encryptedMessage);
 				System.out.println("decrypted message: " + decryptedMessage);
 				return decryptedMessage;
-			} catch (InvalidKeyException | NoSuchPaddingException | NoSuchAlgorithmException
-					| InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
-				System.err.println("error receiving message: " + e.getMessage());
+			} catch (Exception e) {
+				System.err.println("error decrepting message: " + e.getMessage());
 				return null;
 			}
 		}
@@ -201,32 +200,34 @@ public class ChatServer extends JFrame {
 		public void run() {
 			try {
 				// Create data input and output streams
-				fromClient = new DataInputStream(
-						socket.getInputStream());
-				toClient = new DataOutputStream(
-						socket.getOutputStream());
+				fromClient = new DataInputStream(socket.getInputStream());
+				toClient = new DataOutputStream(socket.getOutputStream());
 
-				if (receiveHandshake()) {
-
-					clientKeys.put(toClient, AESKey);
-
-					// Continuously serve the client
-					while (true) {
-						// Receive text from the client
-						String text = receiveEncryptedMessage();
-						ta.append("text received from client " + this.clientId + ": " +
-								text + '\n');
-
-						// Send text back to other clients
-						for (DataOutputStream client : clientKeys.keySet()) {
-							if (client != toClient) {
-								sendEncryptedMessage(client, this.clientId + ": " + text);
-							}
-						}
-					}
-				} else {
+				// initiate handshake
+				if (!receiveHandshake()) {
 					// Close the connection
 					socket.close();
+					return;
+				}
+
+				clientKeys.put(toClient, AESKey);
+
+				// Continuously serve the client
+				while (socket.isConnected()) {
+					// Receive text from the client
+					String textReceived = receiveEncryptedMessage();
+					if (socket.isClosed() | textReceived == null) {
+						return;
+					}
+					ta.append("text received from client " + this.clientId + ": " +
+							textReceived + '\n');
+
+					// Send text back to other clients
+					for (DataOutputStream client : clientKeys.keySet()) {
+						if (client != toClient) {
+							sendEncryptedMessage(client, this.clientId + ": " + textReceived);
+						}
+					}
 				}
 
 			} catch (IOException ex) {

@@ -6,17 +6,13 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
 import java.security.*;
-import java.security.spec.X509EncodedKeySpec;
 import javax.crypto.*;
 import java.util.Arrays;
-import java.util.Base64;
-import javax.crypto.spec.SecretKeySpec;
 import javax.swing.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 
 import encryption.Encryption;
-
 
 public class ChatClient extends JFrame {
 
@@ -35,16 +31,16 @@ public class ChatClient extends JFrame {
 
 	public ChatClient() {
 		super("Chat Client");
-		
+
 		createUI();
 
 		try {
-			serverPublicKey = Encryption.readPublicKey(SERVER_PUBLIC_KEY);			
+			serverPublicKey = Encryption.readPublicKey(SERVER_PUBLIC_KEY);
 		} catch (Exception e) {
 			e.printStackTrace();
 			System.err.println("error getting server public key: " + e.getMessage());
 		}
-		
+
 	}
 
 	private void createUI() {
@@ -71,7 +67,7 @@ public class ChatClient extends JFrame {
 		textArea = new JTextArea(30, 30);
 		JScrollPane sp = new JScrollPane(textArea);
 		add(sp);
-		
+
 		textField = new JTextField(30);
 		add(textField, BorderLayout.SOUTH);
 		textField.addActionListener(new TextFieldListener());
@@ -85,9 +81,9 @@ public class ChatClient extends JFrame {
 	private void closeConnection() {
 		try {
 			socket.close();
-			textArea.append("Connection closed\n");
-		} catch (Exception e1) {
-			System.err.println("error");
+			textArea.append("[Connection closed]\n");
+		} catch (Exception e) {
+			System.err.println("error closing connection: " + e.getMessage());
 		}
 	}
 
@@ -110,25 +106,26 @@ public class ChatClient extends JFrame {
 	}
 
 	private void sendEncryptedMessage(String message) {
+		String encryptedMessage;
 		try {
-			String encryptedMessage = Encryption.encrypt(AESKey, message);
-			sendMessage(encryptedMessage);
+			encryptedMessage = Encryption.encrypt(AESKey, message);
 		} catch (InvalidKeyException | NoSuchPaddingException | NoSuchAlgorithmException
-				| InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
-			System.err.println("error sending message: " + e.getMessage());
+		| InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
+			System.err.println("error encrypting message: " + e.getMessage());
+			return;
 		}
+		sendMessage(encryptedMessage);
 	}
 
 	private String receiveEncryptedMessage() {
+		String encryptedMessage = receiveMessage();
+		System.out.println("Received encrypted message: " + encryptedMessage);
 		try {
-			String encryptedMessage = receiveMessage();
-			System.out.println("Received encrypted message: " + encryptedMessage);
 			String decryptedMessage = Encryption.decrypt(AESKey, encryptedMessage);
 			System.out.println("decrypted message: " + decryptedMessage);
 			return decryptedMessage;
-		} catch (InvalidKeyException | NoSuchPaddingException | NoSuchAlgorithmException
-				| InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
-			System.err.println("error receiving message: " + e.getMessage());
+		} catch (Exception e) {
+			System.err.println("error decrepting message: " + e.getMessage());
 			return null;
 		}
 	}
@@ -142,7 +139,7 @@ public class ChatClient extends JFrame {
 		}
 	}
 
-	private void initiateHandshake() {
+	private boolean initiateHandshake() {
 		// Step 1: Client sends "HELLO" message to server
 		sendMessage("HELLO");
 
@@ -150,14 +147,14 @@ public class ChatClient extends JFrame {
 		String serverResponse = receiveMessage();
 		if (serverResponse.equals("CONNECTED")) {
 			System.out.println("Handshake successful");
-			
+
 			// Step 3: Client generates AES Seed and encrypted seed
 			byte[] seed = Encryption.generateSeed();
 			System.out.println("seed: " + Arrays.toString(seed));
 			try {
 				byte[] encryptedSeed = Encryption.pkEncrypt(serverPublicKey, seed);
 				System.out.println("encrypted seed: " + Arrays.toString(encryptedSeed));
-				
+
 				// Step 4: Client sends encrypted seed to server
 				sendEncropedSeed(encryptedSeed);
 			} catch (InvalidKeyException | NoSuchAlgorithmException | NoSuchPaddingException | IllegalBlockSizeException
@@ -170,8 +167,9 @@ public class ChatClient extends JFrame {
 			System.out.println("key: " + AESKey);
 		} else {
 			System.err.println("Handshake failed");
+			return false;
 		}
-
+		return true;
 	}
 
 	class OpenConnectionListener implements ActionListener {
@@ -180,20 +178,25 @@ public class ChatClient extends JFrame {
 		public void actionPerformed(ActionEvent e) {
 			try {
 				socket = new Socket("localhost", port);
-				textArea.append("connected\n");
-				// Create an input stream to receive data from the server
+				textArea.append("[Connecting...]\n");
+
+				// Create data input and output streams
 				fromServer = new DataInputStream(socket.getInputStream());
-
-				// Create an output stream to send data to the server
 				toServer = new DataOutputStream(socket.getOutputStream());
+				
+				// Initiate handshake
+				if (!initiateHandshake()) {
+					socket.close();
+					return;
+				}
 
-				initiateHandshake();
-
+				textArea.append("[Connected]\n");
+	
 				new Thread(new ServerListener()).start();
 
 			} catch (IOException e1) {
 				e1.printStackTrace();
-				textArea.append("Connection Failure");
+				textArea.append("[Connection Failure]");
 			}
 		}
 
@@ -203,8 +206,6 @@ public class ChatClient extends JFrame {
 
 		@Override
 		public void actionPerformed(ActionEvent e) {
-			// Socket socket = null;
-
 			// Get the text from the text field
 			String textInput = textField.getText().trim();
 			textArea.append(textInput + '\n');
@@ -212,7 +213,6 @@ public class ChatClient extends JFrame {
 
 			// Send the text to the server
 			sendEncryptedMessage(textInput);
-			// socket.close();
 
 		}
 	}
@@ -221,16 +221,18 @@ public class ChatClient extends JFrame {
 
 		@Override
 		public void run() {
-			while (true) {
+			while (socket.isConnected()) {
 				// Get text from the server
 				String textReceived = receiveEncryptedMessage();
+				if (socket.isClosed() | textReceived == null) {
+					return;
+				}
 				textArea.append(textReceived + "\n");
 			}
 		}
 
 	}
 
-	
 	public static void main(String[] args) {
 		ChatClient chatClient = new ChatClient();
 	}
