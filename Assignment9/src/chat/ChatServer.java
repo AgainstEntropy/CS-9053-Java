@@ -10,6 +10,7 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
@@ -23,13 +24,13 @@ import java.security.*;
 public class ChatServer extends JFrame {
 
 	private static final String RSA = "RSA";
-	private Key privateKey;
-
 	private JTextArea ta = null;
-	private int clientId = 0;
-	private ArrayList<DataOutputStream> clients = new ArrayList<>();
 
 	private int port = 9898;
+	private Key privateKey;
+
+	private int clientId = 0;
+	private HashMap<DataOutputStream, Key> clientKeys = new HashMap<>();
 
 	public ChatServer() {
 
@@ -133,6 +134,31 @@ public class ChatServer extends JFrame {
 			}
 		}
 
+		private void sendEncryptedMessage(DataOutputStream client, String message) {
+			try {
+				Key aesKey = clientKeys.get(client);
+				String encryptedMessage = Encryption.encrypt(aesKey, message);
+				sendMessage(client, encryptedMessage);
+			} catch (InvalidKeyException | NoSuchPaddingException | NoSuchAlgorithmException
+					| InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
+				System.err.println("error sending message: " + e.getMessage());
+			}
+		}
+
+		private String receiveEncryptedMessage() {
+			try {
+				String encryptedMessage = receiveMessage();
+				System.out.println("Received encrypted message: " + encryptedMessage);
+				String decryptedMessage = Encryption.decrypt(AESKey, encryptedMessage);
+				System.out.println("decrypted message: " + decryptedMessage);
+				return decryptedMessage;
+			} catch (InvalidKeyException | NoSuchPaddingException | NoSuchAlgorithmException
+					| InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
+				System.err.println("error receiving message: " + e.getMessage());
+				return null;
+			}
+		}
+
 		private byte[] receiveEncryptedSeed() {
 			try {
 				byte[] encryptedSeed = new byte[128];
@@ -150,7 +176,7 @@ public class ChatServer extends JFrame {
 				String receivedMessage = receiveMessage();
 				if (receivedMessage.equals("HELLO")) {
 					sendMessage(toClient, "CONNECTED");
-					
+
 					// Step 3: Server receives encrypted seed, decrypts it, and generates AES Key
 					byte[] encryptedSeed = receiveEncryptedSeed();
 					System.out.println("Received encrypted seed: " + Arrays.toString(encryptedSeed));
@@ -182,20 +208,21 @@ public class ChatServer extends JFrame {
 
 				if (receiveHandshake()) {
 
-					clients.add(toClient);
-	
+					clientKeys.put(toClient, AESKey);
+
 					// Continuously serve the client
 					while (true) {
 						// Receive text from the client
-						String text = receiveMessage();
+						String text = receiveEncryptedMessage();
 						ta.append("text received from client " + this.clientId + ": " +
 								text + '\n');
-	
+
 						// Send text back to other clients
-						for (DataOutputStream client : clients)
+						for (DataOutputStream client : clientKeys.keySet()) {
 							if (client != toClient) {
-								sendMessage(client, this.clientId + ": " + text);
+								sendEncryptedMessage(client, this.clientId + ": " + text);
 							}
+						}
 					}
 				} else {
 					// Close the connection

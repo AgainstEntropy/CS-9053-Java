@@ -21,18 +21,17 @@ import encryption.Encryption;
 public class ChatClient extends JFrame {
 
 	private static final String RSA = "RSA";
+	JTextArea textArea = null;
+	JTextField textField = null;
+
+	private int port = 9898;
 	private static final String SERVER_PUBLIC_KEY = "MIGeMA0GCSqGSIb3DQEBAQUAA4GMADCBiAKBgGk9wUQ4G9PChyL5SUkCyuHjTNOglEy5h4KEi0xpgjxi/UbIH27NXLXOr94JP1N5pa1BbaVSxlvpuCDF0jF9jlZw5IbBg1OW2R1zUACK+NrUIAYHWtagG7KB/YcyNXHOZ6Icv2lXXd7MbIao3ShrUVXo3u+5BJFCEibd8a/JD/KpAgMBAAE=";
 	private PublicKey serverPublicKey;
 	private Key AESKey;
 
-	private int port = 9898;
-
 	Socket socket = null;
 	DataOutputStream toServer = null;
 	DataInputStream fromServer = null;
-
-	JTextArea textArea = null;
-	JTextField textField = null;
 
 	public ChatClient() {
 		super("Chat Client");
@@ -105,6 +104,30 @@ public class ChatClient extends JFrame {
 		try {
 			return fromServer.readUTF();
 		} catch (IOException e) {
+			System.err.println("error receiving message: " + e.getMessage());
+			return null;
+		}
+	}
+
+	private void sendEncryptedMessage(String message) {
+		try {
+			String encryptedMessage = Encryption.encrypt(AESKey, message);
+			sendMessage(encryptedMessage);
+		} catch (InvalidKeyException | NoSuchPaddingException | NoSuchAlgorithmException
+				| InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
+			System.err.println("error sending message: " + e.getMessage());
+		}
+	}
+
+	private String receiveEncryptedMessage() {
+		try {
+			String encryptedMessage = receiveMessage();
+			System.out.println("Received encrypted message: " + encryptedMessage);
+			String decryptedMessage = Encryption.decrypt(AESKey, encryptedMessage);
+			System.out.println("decrypted message: " + decryptedMessage);
+			return decryptedMessage;
+		} catch (InvalidKeyException | NoSuchPaddingException | NoSuchAlgorithmException
+				| InvalidAlgorithmParameterException | BadPaddingException | IllegalBlockSizeException e) {
 			System.err.println("error receiving message: " + e.getMessage());
 			return null;
 		}
@@ -188,7 +211,7 @@ public class ChatClient extends JFrame {
 			textField.setText("");
 
 			// Send the text to the server
-			sendMessage(textInput);
+			sendEncryptedMessage(textInput);
 			// socket.close();
 
 		}
@@ -200,7 +223,7 @@ public class ChatClient extends JFrame {
 		public void run() {
 			while (true) {
 				// Get text from the server
-				String textReceived = receiveMessage();
+				String textReceived = receiveEncryptedMessage();
 				textArea.append(textReceived + "\n");
 			}
 		}
