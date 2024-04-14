@@ -23,7 +23,7 @@ public class ChatClient extends JFrame {
 	private static final String RSA = "RSA";
 	private static final String SERVER_PUBLIC_KEY = "MIGeMA0GCSqGSIb3DQEBAQUAA4GMADCBiAKBgGk9wUQ4G9PChyL5SUkCyuHjTNOglEy5h4KEi0xpgjxi/UbIH27NXLXOr94JP1N5pa1BbaVSxlvpuCDF0jF9jlZw5IbBg1OW2R1zUACK+NrUIAYHWtagG7KB/YcyNXHOZ6Icv2lXXd7MbIao3ShrUVXo3u+5BJFCEibd8a/JD/KpAgMBAAE=";
 	private PublicKey serverPublicKey;
-	private Key communicationKey;
+	private Key AESKey;
 
 	private int port = 9898;
 
@@ -52,20 +52,18 @@ public class ChatClient extends JFrame {
 		JMenuBar menuBar = new JMenuBar();
 		JMenu fileMenu = new JMenu("File");
 		JMenuItem connect = new JMenuItem("Connect");
+		JMenuItem disconnect = new JMenuItem("Disconnect");
 		JMenuItem exit = new JMenuItem("Exit");
 
 		connect.addActionListener(new OpenConnectionListener());
-		// exit.addActionListener(e -> System.exit(0));
+		disconnect.addActionListener((e) -> closeConnection());
 		exit.addActionListener((e) -> {
-			try {
-				socket.close();
-				textArea.append("Connection closed\n");
-			} catch (Exception e1) {
-				System.err.println("error");
-			}
+			closeConnection();
+			System.exit(0);
 		});
 
 		fileMenu.add(connect);
+		fileMenu.add(disconnect);
 		fileMenu.add(exit);
 		menuBar.add(fileMenu);
 
@@ -85,6 +83,74 @@ public class ChatClient extends JFrame {
 		setVisible(true);
 	}
 
+	private void closeConnection() {
+		try {
+			socket.close();
+			textArea.append("Connection closed\n");
+		} catch (Exception e1) {
+			System.err.println("error");
+		}
+	}
+
+	private void sendMessage(String message) {
+		try {
+			toServer.writeUTF(message);
+			toServer.flush();
+		} catch (IOException e) {
+			System.err.println("error sending message: " + e.getMessage());
+		}
+	}
+
+	private String receiveMessage() {
+		try {
+			return fromServer.readUTF();
+		} catch (IOException e) {
+			System.err.println("error receiving message: " + e.getMessage());
+			return null;
+		}
+	}
+
+	private void sendEncropedSeed(byte[] encryptedSeed) {
+		try {
+			toServer.write(encryptedSeed);
+			toServer.flush();
+		} catch (IOException e) {
+			System.err.println("error sending encrypted seed: " + e.getMessage());
+		}
+	}
+
+	private void initiateHandshake() {
+		// Step 1: Client sends "HELLO" message to server
+		sendMessage("HELLO");
+
+		// Step 2: Client receives "CONNECTED" message from server
+		String serverResponse = receiveMessage();
+		if (serverResponse.equals("CONNECTED")) {
+			System.out.println("Handshake successful");
+			
+			// Step 3: Client generates AES Seed and encrypted seed
+			byte[] seed = Encryption.generateSeed();
+			System.out.println("seed: " + Arrays.toString(seed));
+			try {
+				byte[] encryptedSeed = Encryption.pkEncrypt(serverPublicKey, seed);
+				System.out.println("encrypted seed: " + Arrays.toString(encryptedSeed));
+				
+				// Step 4: Client sends encrypted seed to server
+				sendEncropedSeed(encryptedSeed);
+			} catch (InvalidKeyException | NoSuchAlgorithmException | NoSuchPaddingException | IllegalBlockSizeException
+					| BadPaddingException e) {
+				e.printStackTrace();
+			}
+
+			// Step 5: Client sets AES key
+			AESKey = Encryption.generateAESKey(seed);
+			System.out.println("key: " + AESKey);
+		} else {
+			System.err.println("Handshake failed");
+		}
+
+	}
+
 	class OpenConnectionListener implements ActionListener {
 
 		@Override
@@ -97,6 +163,8 @@ public class ChatClient extends JFrame {
 
 				// Create an output stream to send data to the server
 				toServer = new DataOutputStream(socket.getOutputStream());
+
+				initiateHandshake();
 
 				new Thread(new ServerListener()).start();
 
@@ -114,19 +182,14 @@ public class ChatClient extends JFrame {
 		public void actionPerformed(ActionEvent e) {
 			// Socket socket = null;
 
-			try {
-				// Get the text from the text field
-				String textInput = textField.getText().trim();
-				textArea.append(textInput + '\n');
-				textField.setText("");
+			// Get the text from the text field
+			String textInput = textField.getText().trim();
+			textArea.append(textInput + '\n');
+			textField.setText("");
 
-				// Send the text to the server
-				toServer.writeUTF(textInput);
-				toServer.flush();
-				// socket.close();
-			} catch (IOException ex) {
-				System.err.println(ex);
-			}
+			// Send the text to the server
+			sendMessage(textInput);
+			// socket.close();
 
 		}
 	}
@@ -135,14 +198,10 @@ public class ChatClient extends JFrame {
 
 		@Override
 		public void run() {
-			try {
-				while (true) {
-					// Get text from the server
-					String textReceived = fromServer.readUTF();
-					textArea.append(textReceived + "\n");
-				}
-			} catch (IOException e) {
-				System.err.println(e);
+			while (true) {
+				// Get text from the server
+				String textReceived = receiveMessage();
+				textArea.append(textReceived + "\n");
 			}
 		}
 

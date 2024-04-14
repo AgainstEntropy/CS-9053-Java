@@ -81,8 +81,8 @@ public class ChatServer extends JFrame {
 				// Increment clientNo
 				clientId++;
 				ta.append("Starting thread for client " + clientId +
-				" at " + new Date() + '\n');
-				
+						" at " + new Date() + '\n');
+
 				InetAddress inetAddress = socket.getInetAddress();
 				ta.append("Got connection from client at " + inetAddress.getHostName() + " (" +
 						inetAddress.getHostAddress() + ")\n");
@@ -107,6 +107,7 @@ public class ChatServer extends JFrame {
 		private DataInputStream fromClient = null;
 
 		private int clientId;
+		private Key AESKey = null;
 
 		/** Construct a thread */
 		public ClientHandler(Socket socket, int clientId) {
@@ -114,7 +115,63 @@ public class ChatServer extends JFrame {
 			this.clientId = clientId;
 		}
 
+		private void sendMessage(DataOutputStream client, String message) {
+			try {
+				client.writeUTF(message);
+				client.flush();
+			} catch (IOException e) {
+				System.err.println("error sending message: " + e.getMessage());
+			}
+		}
+
+		private String receiveMessage() {
+			try {
+				return fromClient.readUTF();
+			} catch (IOException e) {
+				System.err.println("error receiving message: " + e.getMessage());
+				return null;
+			}
+		}
+
+		private byte[] receiveEncryptedSeed() {
+			try {
+				byte[] encryptedSeed = new byte[128];
+				fromClient.read(encryptedSeed);
+				return encryptedSeed;
+			} catch (IOException e) {
+				System.err.println("error receiving encrypted seed: " + e.getMessage());
+				return null;
+			}
+		}
+
+		private boolean receiveHandshake() {
+			try {
+				// Step 2: Server receives "HELLO" message and sends "CONNECTED" message
+				String receivedMessage = receiveMessage();
+				if (receivedMessage.equals("HELLO")) {
+					sendMessage(toClient, "CONNECTED");
+					
+					// Step 3: Server receives encrypted seed, decrypts it, and generates AES Key
+					byte[] encryptedSeed = receiveEncryptedSeed();
+					System.out.println("Received encrypted seed: " + Arrays.toString(encryptedSeed));
+					byte[] decryptedSeed = Encryption.pkDecrypt(privateKey, encryptedSeed);
+					System.out.println("decrypted seed: " + Arrays.toString(decryptedSeed));
+					AESKey = Encryption.generateAESKey(decryptedSeed);
+					System.out.println("key (client " + clientId + "): " + AESKey);
+				} else {
+					System.err.println("Handshake failed");
+					return false;
+				}
+			} catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException
+					| IllegalBlockSizeException | BadPaddingException e) {
+				e.printStackTrace();
+				System.err.println("problem with handshake: " + e.getMessage());
+			}
+			return true;
+		}
+
 		/** Run a thread */
+		@Override
 		public void run() {
 			try {
 				// Create data input and output streams
@@ -122,20 +179,29 @@ public class ChatServer extends JFrame {
 						socket.getInputStream());
 				toClient = new DataOutputStream(
 						socket.getOutputStream());
-				clients.add(toClient);
 
-				// Continuously serve the client
-				while (true) {
-					// Receive text from the client
-					String text = fromClient.readUTF();
-					ta.append("text received from client " + this.clientId + ": " +
-							text + '\n');
+				if (receiveHandshake()) {
 
-					// Send text back to other clients
-					for (DataOutputStream client : clients)
-						if (client != toClient)
-							client.writeUTF(this.clientId + ": " + text);
+					clients.add(toClient);
+	
+					// Continuously serve the client
+					while (true) {
+						// Receive text from the client
+						String text = receiveMessage();
+						ta.append("text received from client " + this.clientId + ": " +
+								text + '\n');
+	
+						// Send text back to other clients
+						for (DataOutputStream client : clients)
+							if (client != toClient) {
+								sendMessage(client, this.clientId + ": " + text);
+							}
+					}
+				} else {
+					// Close the connection
+					socket.close();
 				}
+
 			} catch (IOException ex) {
 				ex.printStackTrace();
 			}
